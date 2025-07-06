@@ -27,8 +27,8 @@ const Codeeditor = ({ minHeightReached }) => {
   // User ke likhe code ke liye state
   const [code, setCode] = useState("");
 
-  // Output store karne ke liye state
-  const [output, setOutput] = useState("");
+  // Store the full result object for detailed output
+  const [result, setResult] = useState(null);
 
   // Jab code run ho raha ho toh "Running..." show karne ke liye state
   const [isRunning, setIsRunning] = useState(false);
@@ -117,7 +117,7 @@ echo "Hello from Judge0!";
     }
 
     setIsRunning(true);
-    setOutput("");
+    setResult(null);
     setExecutionTime(null);
     setMemoryUsed(null);
 
@@ -147,7 +147,7 @@ echo "Hello from Judge0!";
       for (let i = 0; i < 30; i++) {
         try {
           const resultResponse = await axios.get(
-            `http://localhost:2358/submissions/${token}?base64_encoded=false&fields=stdout,stderr,compile_output,status,time,memory`
+            `http://localhost:2358/submissions/${token}?base64_encoded=true`
           );
           
           result = resultResponse.data;
@@ -170,25 +170,22 @@ echo "Hello from Judge0!";
       if (result) {
         const endTime = Date.now();
         const totalTime = endTime - startTime;
-
+        setResult(result);
+        setExecutionTime(result.time || (totalTime / 1000).toFixed(3));
+        setMemoryUsed(result.memory || "N/A");
         if (result.status.description === "Accepted") {
-          setOutput(result.stdout || "Program executed successfully!");
-          setExecutionTime(result.time || (totalTime / 1000).toFixed(3));
-          setMemoryUsed(result.memory || "N/A");
           toast.success("Code executed successfully!");
         } else {
-          const errorMsg = result.compile_output || result.stderr || "Unknown error occurred";
-          setOutput(`❌ ${result.status.description}\n\n${errorMsg}`);
           toast.error(`Execution failed: ${result.status.description}`);
         }
       } else {
-        setOutput("❌ Timeout: Could not get result from server");
+        setResult({ status: { description: "Timeout" }, compile_output: null, stderr: null, stdout: null });
         toast.error("Execution timeout");
       }
     } catch (error) {
       toast.dismiss(loadingToast);
       console.error("Error:", error);
-      setOutput(`❌ Error: ${error.response?.data?.message || error.message}`);
+      setResult({ status: { description: "Error" }, compile_output: null, stderr: error.response?.data?.message || error.message, stdout: null });
       toast.error("Failed to execute code");
     } finally {
       setIsRunning(false);
@@ -197,7 +194,7 @@ echo "Hello from Judge0!";
 
   const handleReset = () => {
     setCode(defaultTemplates[language] || "// Start coding...");
-    setOutput("");
+    setResult(null);
     setCustomInput("");
     setExecutionTime(null);
     setMemoryUsed(null);
@@ -226,6 +223,16 @@ echo "Hello from Judge0!";
       reader.readAsText(file);
     }
   };
+
+  // Helper to decode base64 strings
+  function decodeBase64(str) {
+    if (!str) return "";
+    try {
+      return atob(str);
+    } catch {
+      return "";
+    }
+  }
 
   // Jo UI dikh rahi hai screen par, wo yaha render ho rahi hai
   return (
@@ -364,7 +371,38 @@ echo "Hello from Judge0!";
             )}
           </div>
           <div className="output-content">
-            <pre>{output || "Output will appear here..."}</pre>
+            {result ? (
+              <>
+                {result.status && result.status.description && (
+                  <div style={{ fontWeight: "bold", marginBottom: 8 }}>
+                    Status: {result.status.description}
+                  </div>
+                )}
+                {result.compile_output && (
+                  <div style={{ color: "#e74c3c", marginBottom: 8 }}>
+                    <strong>Compilation Error:</strong>
+                    <pre>{decodeBase64(result.compile_output)}</pre>
+                  </div>
+                )}
+                {result.stderr && !result.compile_output && (
+                  <div style={{ color: "#e67e22", marginBottom: 8 }}>
+                    <strong>Runtime Error:</strong>
+                    <pre>{decodeBase64(result.stderr)}</pre>
+                  </div>
+                )}
+                {result.stdout && !result.compile_output && !result.stderr && (
+                  <div style={{ color: "#2ecc71", marginBottom: 8 }}>
+                    <strong>Output:</strong>
+                    <pre>{decodeBase64(result.stdout)}</pre>
+                  </div>
+                )}
+                {!result.stdout && !result.stderr && !result.compile_output && (
+                  <pre>No output.</pre>
+                )}
+              </>
+            ) : (
+              <pre>Output will appear here...</pre>
+            )}
           </div>
         </motion.div>
       </motion.main>
